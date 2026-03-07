@@ -7,8 +7,8 @@ from fpdf import FPDF
 # --- KONFIGURACJA ---
 VAT = 1.23
 
-# Funkcja usuwająca polskie znaki do PDF (standardowe czcionki ich nie obsługują)
 def clean_pl(text):
+    """Usuwa polskie znaki dla poprawnego działania standardowych czcionek PDF"""
     pl_map = str.maketrans("ąćęłńóśźżĄĆĘŁŃÓŚŹŻ", "acelnoszzACELNOSZZ")
     return str(text).translate(pl_map)
 
@@ -81,7 +81,8 @@ def create_pdf(kod, szer, wys, obwod, mkw, elementy, suma):
     pdf.set_font("Helvetica", "I", 10)
     pdf.multi_cell(0, 10, clean_pl("Dziekujemy za zapytanie. Zapraszamy do realizacji zlecenia!\nwww.antyramy.eu"))
     
-    return pdf.output()
+    # KLUCZOWA POPRAWKA: Konwersja bytearray na bytes
+    return bytes(pdf.output())
 
 # --- START UI ---
 st.set_page_config(page_title="Kalkulator Antyramy.eu", layout="centered")
@@ -122,7 +123,7 @@ if input_tekst and df is not None:
 
         st.info(f"Listwa: {l['kod']} ({sz_listwy} cm) | POTRZEBA: {obwod_m:.2f} mb / {pow_m2:.3f} mkw")
 
-        # Obliczenia finansowe
+        # Obliczenia
         k_listwa = (c_l_netto * (1 + config['marza_listwa'])) * VAT * obwod_m
         k_oprawa = (c_o_netto * (1 + config['marza_oprawa'])) * VAT * obwod_m
         k_float = (config['float'] * VAT) * pow_m2
@@ -144,7 +145,7 @@ if input_tekst and df is not None:
                 wybrane_do_akcji.append(f"{nazwa}: {cena:.2f} zl")
 
         st.divider()
-        st.header(f"SUMA: {suma:.2f} zł")
+        st.header(f"RAZEM: {suma:.2f} zł")
 
         if suma > 0:
             c1, c2 = st.columns(2)
@@ -153,7 +154,7 @@ if input_tekst and df is not None:
             tekst_sms = f"Wycena (Listwa {l['kod']}, {int(szer)}x{int(wys)}cm):\n" + "\n".join(wybrane_do_akcji) + f"\nSuma: {suma:.2f} zl\nwww.antyramy.eu"
             c1.link_button("📱 Wyślij SMS", f"sms:?body={urllib.parse.quote(tekst_sms)}", use_container_width=True)
             
-            # PDF - Zabezpieczony przed błędami
+            # PDF - Teraz poprawnie zamieniony na bajty
             try:
                 pdf_bytes = create_pdf(l['kod'], szer, wys, obwod_m, pow_m2, wybrane_do_akcji, suma)
                 c2.download_button(
@@ -170,7 +171,7 @@ if input_tekst and df is not None:
     else:
         st.error(f"Nie znaleziono kodu: {kod_szukany}")
 
-with st.expander("🛠️ Instrukcja i Diagnostyka"):
+with st.expander("🛠️ Diagnostyka"):
     if config:
-        st.write(f"- Marża listwy: {config['marza_listwa']*100}%")
-        st.write(f"- Cena Float: {config['float']} zł")
+        st.write(f"Marża listwa: {config['marza_listwa']*100}% | Marża oprawa: {config['marza_oprawa']*100}%")
+        st.write(f"Cena Float Netto: {config['float']} zł")
