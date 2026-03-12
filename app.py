@@ -8,13 +8,14 @@ from fpdf import FPDF
 VAT = 1.23
 
 def clean_pl(text):
-    """Usuwa polskie znaki dla poprawnego działania standardowych czcionek PDF"""
+    """Usuwa polskie znaki dla potrzeb generatora PDF (standardowe czcionki)"""
     pl_map = str.maketrans("ąćęłńóśźżĄĆĘŁŃÓŚŹŻ", "acelnoszzACELNOSZZ")
     return str(text).translate(pl_map)
 
-@st.cache_data(show_spinner="Odświeżanie cennika...")
+@st.cache_data(show_spinner="Pobieranie danych...")
 def load_data():
     try:
+        # Wczytujemy cennik z GitHub
         df_raw = pd.read_csv('cennik.csv', sep=';', decimal=',', header=None, dtype=str)
         
         def get_val_footer(keyword, col_idx):
@@ -25,6 +26,7 @@ def load_data():
                 return float(val)
             return 0.0
 
+        # Konfiguracja marż i cen dodatków
         prices = {
             'float': get_val_footer('float', 2),
             'hdf': get_val_footer('hdf', 2),
@@ -34,6 +36,7 @@ def load_data():
             'marza_oprawa': get_val_footer('mar', 3) / 100 if get_val_footer('mar', 3) > 0 else 0.3
         }
 
+        # Wyodrębnienie listy listew
         df_frames = df_raw.iloc[2:].copy()
         stopka_mask = df_frames[0].astype(str).str.lower().str.contains('float|hdf|anty|pas|mar', na=False)
         if stopka_mask.any():
@@ -54,19 +57,16 @@ def create_pdf(kod, szer, wys, obwod, mkw, elementy, suma):
     pdf.set_font("Helvetica", "B", 16)
     pdf.cell(0, 10, clean_pl("WYCENA OPRAWY - ANTYRAMY.EU"), ln=True, align="C")
     pdf.ln(10)
-    
     pdf.set_font("Helvetica", "", 12)
     pdf.cell(0, 10, clean_pl(f"Kod listwy: {kod}"), ln=True)
     pdf.cell(0, 10, clean_pl(f"Wymiary obrazu: {int(szer)} x {int(wys)} cm"), ln=True)
     pdf.cell(0, 10, clean_pl(f"Zapotrzebowanie: {obwod:.2f} mb listwy / {mkw:.3f} mkw powierzchni"), ln=True)
     pdf.ln(5)
-    
     pdf.set_font("Helvetica", "B", 12)
     pdf.cell(0, 10, clean_pl("Wybrane elementy wyceny:"), ln=True)
     pdf.set_font("Helvetica", "", 12)
     for el in elementy:
         pdf.cell(0, 10, clean_pl(el), ln=True)
-    
     pdf.ln(10)
     pdf.set_font("Helvetica", "B", 14)
     pdf.cell(0, 10, clean_pl(f"SUMA BRUTTO: {suma:.2f} PLN"), ln=True)
@@ -75,20 +75,28 @@ def create_pdf(kod, szer, wys, obwod, mkw, elementy, suma):
     pdf.multi_cell(0, 10, clean_pl("Dziekujemy za zapytanie. Zapraszamy do realizacji zlecenia!\nwww.antyramy.eu"))
     return bytes(pdf.output())
 
-# --- START UI ---
+# --- INTERFEJS UŻYTKOWNIKA ---
 st.set_page_config(page_title="Kalkulator Antyramy.eu", layout="centered")
 
 df, config = load_data()
 
-c_title, c_reset = st.columns([3, 1])
-with c_title:
-    st.title("🖩 Kalkulator")
-with c_reset:
-    if st.button("ODŚWIEŻ 🔄"):
-        st.cache_data.clear()
+# Nagłówek z dwoma przyciskami
+col_title, col_calc, col_new = st.columns([2, 1, 1])
+with col_title:
+    st.title("🖼️ Wycena")
+
+with col_calc:
+    if st.button("Wyceń 📈", use_container_width=True):
+        st.cache_data.clear() # Odświeża cennik z GitHub
         st.rerun()
 
-input_tekst = st.text_input("Kod i wymiar (np. '3484 50x70'):")
+with col_new:
+    if st.button("Nowa ✨", use_container_width=True):
+        st.session_state["main_input"] = "" # Czyści pole wpisywania
+        st.rerun()
+
+# Pole do wpisywania kodu i wymiarów
+input_tekst = st.text_input("Podaj kod i wymiar (np. '3484 50x70'):", key="main_input")
 
 if input_tekst and df is not None:
     liczby = re.findall(r'\d+', input_tekst)
@@ -105,14 +113,16 @@ if input_tekst and df is not None:
         szer = col1.number_input("Szerokość (cm)", value=szer_init)
         wys = col2.number_input("Wysokość (cm)", value=wys_init)
 
+        # Dane z cennika
         c_l_netto = float(str(l['cena_l_netto']).replace(',', '.'))
         c_o_netto = float(str(l['cena_o_netto']).replace(',', '.'))
         sz_listwy = float(str(l['szerokosc']).replace(',', '.'))
 
+        # Obliczenia materiałowe
         obwod_m = ((2 * szer) + (2 * wys) + (8 * sz_listwy)) / 100
         pow_m2 = (szer * wys) / 10000
 
-        # KOSZTY PRODUCENTA
+        # Koszty zakupu u producenta
         koszt_prod_listwa = (c_l_netto * VAT) * obwod_m
         koszt_prod_oprawa = (c_o_netto * VAT) * obwod_m
 
@@ -143,13 +153,13 @@ if input_tekst and df is not None:
                 suma += cena
                 wybrane_do_akcji.append(f"{nazwa}: {cena:.2f} zl")
 
-        # --- NOWA SEKCJA: USŁUGA RĘCZNA ---
+        # Sekcja usługi ręcznej
         st.divider()
         col_u1, col_u2 = st.columns([2, 1])
         with col_u1:
-            dodaj_usluge = st.checkbox("Dodatkowa usługa (wpisz kwotę obok)")
+            dodaj_usluge = st.checkbox("Dodatkowa usługa")
         with col_u2:
-            kwota_uslugi = st.number_input("Cena usługi (zł)", value=0.0, step=1.0, label_visibility="collapsed")
+            kwota_uslugi = st.number_input("Cena (zł)", value=0.0, step=1.0, label_visibility="collapsed")
 
         if dodaj_usluge and kwota_uslugi > 0:
             suma += kwota_uslugi
@@ -166,10 +176,15 @@ if input_tekst and df is not None:
             
             try:
                 pdf_bytes = create_pdf(l['kod'], szer, wys, obwod_m, pow_m2, wybrane_do_akcji, suma)
-                c2.download_button(label="📄 Pobierz PDF", data=pdf_bytes, file_name=f"wycena_{l['kod']}.pdf", mime="application/pdf", use_container_width=True)
+                c2.download_button(label="📄 Pobierz PDF", data=pdf_bytes, file_name=f"wycena_{l['kod']}_{int(szer)}x{int(wys)}.pdf", mime="application/pdf", use_container_width=True)
             except Exception as e:
                 c2.error(f"Błąd PDF: {e}")
                 
-            st.text_area("Podgląd tekstu:", tekst_sms, height=120)
+            st.text_area("Podgląd tekstu do skopiowania:", tekst_sms, height=120)
     else:
         st.error(f"Nie znaleziono kodu: {kod_szukany}")
+
+with st.expander("🛠️ Diagnostyka"):
+    if config:
+        st.write(f"Marża listwa: {config['marza_listwa']*100}% | Marża oprawa: {config['marza_oprawa']*100}%")
+        st.write(f"Cena Float Netto: {config['float']} zł")
