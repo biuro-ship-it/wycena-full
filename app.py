@@ -8,11 +8,11 @@ from fpdf import FPDF
 VAT = 1.23
 
 def clean_pl(text):
-    """Usuwa polskie znaki dla potrzeb generatora PDF (standardowe czcionki)"""
+    """Usuwa polskie znaki dla potrzeb generatora PDF"""
     pl_map = str.maketrans("ąćęłńóśźżĄĆĘŁŃÓŚŹŻ", "acelnoszzACELNOSZZ")
     return str(text).translate(pl_map)
 
-@st.cache_data(show_spinner="Pobieranie danych...")
+@st.cache_data(show_spinner="Pobieranie cennika...")
 def load_data():
     try:
         # Wczytujemy cennik z GitHub
@@ -26,7 +26,6 @@ def load_data():
                 return float(val)
             return 0.0
 
-        # Konfiguracja marż i cen dodatków
         prices = {
             'float': get_val_footer('float', 2),
             'hdf': get_val_footer('hdf', 2),
@@ -36,7 +35,6 @@ def load_data():
             'marza_oprawa': get_val_footer('mar', 3) / 100 if get_val_footer('mar', 3) > 0 else 0.3
         }
 
-        # Wyodrębnienie listy listew
         df_frames = df_raw.iloc[2:].copy()
         stopka_mask = df_frames[0].astype(str).str.lower().str.contains('float|hdf|anty|pas|mar', na=False)
         if stopka_mask.any():
@@ -80,20 +78,29 @@ st.set_page_config(page_title="Kalkulator Antyramy.eu", layout="centered")
 
 df, config = load_data()
 
-# Nagłówek z dwoma przyciskami
-col_title, col_calc, col_new = st.columns([2, 1, 1])
-with col_title:
-    st.title("🖼️ Wycena")
+# Nagłówek: Logo + Tytuł + Przyciski
+col_logo, col_rest = st.columns([1, 4])
 
-with col_calc:
-    if st.button("Wyceń 📈", use_container_width=True):
-        st.cache_data.clear() # Odświeża cennik z GitHub
-        st.rerun()
+with col_logo:
+    try:
+        st.image("KOD A.png", use_container_width=True)
+    except:
+        st.write("🖼️")
 
-with col_new:
-    if st.button("Nowa ✨", use_container_width=True):
-        st.session_state["main_input"] = "" # Czyści pole wpisywania
-        st.rerun()
+with col_rest:
+    col_title, col_calc, col_new = st.columns([2, 1, 1])
+    with col_title:
+        st.title("Wycena")
+    with col_calc:
+        # Przycisk do odświeżania cennika (wymusza pobranie z GitHub)
+        if st.button("Odśwież 🔄", use_container_width=True):
+            st.cache_data.clear()
+            st.toast("Cennik zaktualizowany!") # Małe powiadomienie
+    with col_new:
+        # Przycisk do nowej wyceny (czyści pole tekstowe)
+        if st.button("Nowa ✨", use_container_width=True):
+            st.session_state["main_input"] = ""
+            st.rerun()
 
 # Pole do wpisywania kodu i wymiarów
 input_tekst = st.text_input("Podaj kod i wymiar (np. '3484 50x70'):", key="main_input")
@@ -122,7 +129,7 @@ if input_tekst and df is not None:
         obwod_m = ((2 * szer) + (2 * wys) + (8 * sz_listwy)) / 100
         pow_m2 = (szer * wys) / 10000
 
-        # Koszty zakupu u producenta
+        # Koszty zakupu u producenta (BRUTTO)
         koszt_prod_listwa = (c_l_netto * VAT) * obwod_m
         koszt_prod_oprawa = (c_o_netto * VAT) * obwod_m
 
