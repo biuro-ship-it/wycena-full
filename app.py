@@ -15,6 +15,7 @@ def clean_pl(text):
 @st.cache_data(show_spinner="Odświeżanie cennika...")
 def load_data():
     try:
+        # Wczytujemy plik CSV (średnik i przecinek)
         df_raw = pd.read_csv('cennik.csv', sep=';', decimal=',', header=None, dtype=str)
         
         def get_val_footer(keyword, col_idx):
@@ -25,6 +26,7 @@ def load_data():
                 return float(val)
             return 0.0
 
+        # Pobieranie konfiguracji ze stopki
         prices = {
             'float': get_val_footer('float', 2),
             'hdf': get_val_footer('hdf', 2),
@@ -34,6 +36,7 @@ def load_data():
             'marza_oprawa': get_val_footer('mar', 3) / 100 if get_val_footer('mar', 3) > 0 else 0.3
         }
 
+        # Wyodrębnienie listew (odcinamy nagłówek i stopkę)
         df_frames = df_raw.iloc[2:].copy()
         stopka_mask = df_frames[0].astype(str).str.lower().str.contains('float|hdf|anty|pas|mar', na=False)
         if stopka_mask.any():
@@ -81,7 +84,6 @@ def create_pdf(kod, szer, wys, obwod, mkw, elementy, suma):
     pdf.set_font("Helvetica", "I", 10)
     pdf.multi_cell(0, 10, clean_pl("Dziekujemy za zapytanie. Zapraszamy do realizacji zlecenia!\nwww.antyramy.eu"))
     
-    # KLUCZOWA POPRAWKA: Konwersja bytearray na bytes
     return bytes(pdf.output())
 
 # --- START UI ---
@@ -114,16 +116,26 @@ if input_tekst and df is not None:
         szer = col1.number_input("Szerokość (cm)", value=szer_init)
         wys = col2.number_input("Wysokość (cm)", value=wys_init)
 
+        # Konwersja cen z wiersza
         c_l_netto = float(str(l['cena_l_netto']).replace(',', '.'))
         c_o_netto = float(str(l['cena_o_netto']).replace(',', '.'))
         sz_listwy = float(str(l['szerokosc']).replace(',', '.'))
 
+        # Obliczenia techniczne
         obwod_m = ((2 * szer) + (2 * wys) + (8 * sz_listwy)) / 100
         pow_m2 = (szer * wys) / 10000
 
-        st.info(f"Listwa: {l['kod']} ({sz_listwy} cm) | POTRZEBA: {obwod_m:.2f} mb / {pow_m2:.3f} mkw")
+        # WYCENA PRODUCENTA (Brutto - bez Twojej marży)
+        koszt_prod_listwa = (c_l_netto * VAT) * obwod_m
+        koszt_prod_oprawa = (c_o_netto * VAT) * obwod_m
 
-        # Obliczenia
+        st.info(f"""
+        Listwa: {l['kod']} ({sz_listwy} cm) | POTRZEBA: {obwod_m:.2f} mb / {pow_m2:.3f} mkw
+        
+        KOSZT PROD. (brutto): Listwa {koszt_prod_listwa:.2f} zł / Rama {koszt_prod_oprawa:.2f} zł
+        """)
+
+        # Obliczenia dla klienta (Z marżą)
         k_listwa = (c_l_netto * (1 + config['marza_listwa'])) * VAT * obwod_m
         k_oprawa = (c_o_netto * (1 + config['marza_oprawa'])) * VAT * obwod_m
         k_float = (config['float'] * VAT) * pow_m2
@@ -154,7 +166,7 @@ if input_tekst and df is not None:
             tekst_sms = f"Wycena (Listwa {l['kod']}, {int(szer)}x{int(wys)}cm):\n" + "\n".join(wybrane_do_akcji) + f"\nSuma: {suma:.2f} zl\nwww.antyramy.eu"
             c1.link_button("📱 Wyślij SMS", f"sms:?body={urllib.parse.quote(tekst_sms)}", use_container_width=True)
             
-            # PDF - Teraz poprawnie zamieniony na bajty
+            # PDF 
             try:
                 pdf_bytes = create_pdf(l['kod'], szer, wys, obwod_m, pow_m2, wybrane_do_akcji, suma)
                 c2.download_button(
