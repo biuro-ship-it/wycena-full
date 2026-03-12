@@ -159,8 +159,9 @@ Profil listwy;b w paczce;Cena netto w listwie/mb (PLN);Cena netto w ramie/mb (PL
 9160;6;54,9;87,5;6
 9330;6;27,8;43;3
 9340;6;45,5;70,3;4
-float;;43;;
+float;;73;;
 hdf;;30;;
-antyreflex;;80;;
-paspartu;;50;;
-marza;;50;30;
+antyreflex;;120;;
+paspartu;;60;;
+marza;;80;50;
+
