@@ -79,24 +79,23 @@ st.set_page_config(page_title="Kalkulator Antyramy.eu", layout="centered")
 
 df, config = load_data()
 
-# LOGOWANIE (Dyskretne na dole, sprawdzane tutaj)
+# PANEL BOCZNY (Sidebar)
 czy_admin = False
 with st.sidebar:
-    haslo = st.text_input("Panel Właściciela (Hasło):", type="password")
+    st.write("### Administracja")
+    haslo = st.text_input("Hasło:", type="password")
     if haslo == HASLO_ADMIN:
         czy_admin = True
-        st.success("Zalogowano jako Właściciel")
+        st.success("Witaj Szefie!")
 
 # Nagłówek
 col_title, col_calc, col_new = st.columns([2, 1, 1])
 with col_title:
     st.markdown("<h1 style='color: red; margin: 0; padding: 0;'>Wycena</h1>", unsafe_allow_html=True)
-
 with col_calc:
     if st.button("Odśwież 🔄", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
-
 with col_new:
     if st.button("Nowa ✨", use_container_width=True):
         st.rerun()
@@ -122,7 +121,7 @@ if df is not None:
     obwod_m = ((2 * szer) + (2 * wys) + (8 * sz_listwy)) / 100
     pow_m2 = (szer * wys) / 10000
 
-    # POKAZYWANIE KOSZTÓW TYLKO ADMINOWI
+    # INFORMACJA O MODELU
     if czy_admin:
         k_prod_l = (c_l_netto * VAT) * obwod_m
         k_prod_o = (c_o_netto * VAT) * obwod_m
@@ -132,10 +131,9 @@ if df is not None:
         KOSZT PROD. (brutto): Listwa {k_prod_l:.2f} zł / Rama {k_prod_o:.2f} zł
         """)
     else:
-        # Widok dla klienta - bez kosztów produkcji
         st.info(f"Wybrany model: **{wybrany_kod}** (Szerokość profilu: {sz_listwy} cm)")
 
-    # Obliczenia dla klienta
+    # Obliczenia bazowe
     k_listwa = (c_l_netto * (1 + config['marza_listwa'])) * VAT * obwod_m
     k_oprawa = (c_o_netto * (1 + config['marza_oprawa'])) * VAT * obwod_m
     k_float = (config['float'] * VAT) * pow_m2
@@ -147,16 +145,33 @@ if df is not None:
     suma = 0.0
     wybrane_do_akcji = []
     
-    opcje = [("Sama listwa", k_listwa), ("Listwa z oprawą", k_oprawa), 
-                ("Szyba Float", k_float), ("Szyba Antyreflex", k_anty), 
-                ("Płyta HDF", k_hdf), ("Passe-partout", k_pp)]
+    # --- LOGIKA OPCJI (KLIENT VS ADMIN) ---
+    if czy_admin:
+        # Właściciel widzi wszystko
+        opcje = [
+            ("Sama listwa", k_listwa), 
+            ("Listwa z oprawą", k_oprawa), 
+            ("Szyba Float", k_float), 
+            ("Szyba Antyreflex", k_anty), 
+            ("Płyta HDF", k_hdf), 
+            ("Passe-partout", k_pp)
+        ]
+    else:
+        # Klient widzi okrojone i zmienione nazwy
+        opcje = [
+            ("Wybrana listwa", k_oprawa), # Zmieniona nazwa, cena z oprawą
+            ("Szyba Float", k_float), 
+            ("Szyba Antyreflex", k_anty), 
+            ("Płyta HDF", k_hdf), 
+            ("Passe-partout", k_pp)
+        ]
 
     for nazwa, cena in opcje:
         if st.checkbox(f"{nazwa}: {cena:.2f} zł"):
             suma += cena
             wybrane_do_akcji.append(f"{nazwa}: {cena:.2f} zl")
 
-    # Dodatkowa usługa tylko dla Admina (lub opcjonalnie dla klienta, jeśli chcesz)
+    # Dodatkowa usługa tylko dla zalogowanego
     if czy_admin:
         st.divider()
         col_u1, col_u2 = st.columns([2, 1])
@@ -176,8 +191,7 @@ if df is not None:
         c1, c2 = st.columns(2)
         t_sms = f"Wycena (Listwa {wybrany_kod}, {int(szer)}x{int(wys)}cm):\n" + "\n".join(wybrane_do_akcji) + f"\nSuma: {suma:.2f} zl\nwww.antyramy.eu"
         
-        # Przycisk SMS (Klienci rzadziej używają, ale zostawiamy)
-        c1.link_button("📱 Wyślij zapytanie", f"sms:?body={urllib.parse.quote(t_sms)}", use_container_width=True)
+        c1.link_button("📱 Wyślij SMS", f"sms:?body={urllib.parse.quote(t_sms)}", use_container_width=True)
         
         try:
             p_bytes = create_pdf(wybrany_kod, szer, wys, obwod_m, pow_m2, wybrane_do_akcji, suma)
