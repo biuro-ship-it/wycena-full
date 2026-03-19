@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import re
@@ -77,125 +76,102 @@ def create_pdf(kod, szer, wys, obwod, mkw, elementy, suma):
 # --- START UI ---
 st.set_page_config(page_title="Kalkulator Antyramy.eu", layout="centered")
 
-# Inicjalizacja stanu
-if "wymiar_input" not in st.session_state:
-    st.session_state["wymiar_input"] = ""
-
 df, config = load_data()
 
-# Nagłówek: Logo + Tytuł + Przyciski
-col_logo, col_rest = st.columns([1, 4])
-with col_logo:
-    try: st.image("KOD A.png", use_container_width=True)
-    except: st.write("🖼️")
-
-with col_rest:
-    col_title, col_calc, col_new = st.columns([2, 1, 1])
-    with col_title:
-        st.markdown("<h1 style='color: red; margin: 0; padding: 0;'>Wycena</h1>", unsafe_allow_html=True)
-    with col_calc:
-        if st.button("Odśwież 🔄", use_container_width=True):
-            st.cache_data.clear()
-            st.rerun()
-    with col_new:
-        if st.button("Nowa ✨", use_container_width=True):
-            st.session_state["wymiar_input"] = ""
-            st.rerun()
+# Nagłówek: Tytuł (Czerwony) + Przyciski
+col_title, col_calc, col_new = st.columns([2, 1, 1])
+with col_title:
+    st.markdown("<h1 style='color: red; margin: 0; padding: 0;'>Wycena</h1>", unsafe_allow_html=True)
+with col_calc:
+    if st.button("Odśwież 🔄", use_container_width=True):
+        st.cache_data.clear()
+        st.rerun()
+with col_new:
+    if st.button("Nowa ✨", use_container_width=True):
+        st.rerun() # Przycisk przeładowuje stronę do ustawień domyślnych
 
 # --- WPISYWANIE DANYCH ---
 if df is not None:
-    c_k1, c_k2 = st.columns([1, 1])
+    # 1. Wybór kodu listwy
+    lista_kodow = sorted(df['kod'].unique().tolist())
+    wybrany_kod = st.selectbox("Wybierz kod listwy:", lista_kodow)
     
-    with c_k1:
-        # Lista rozwijalna z kodami
-        lista_kodow = sorted(df['kod'].unique().tolist())
-        wybrany_kod = st.selectbox("Wybierz kod listwy:", lista_kodow)
-    
-    with c_k2:
-        # Ręczne wpisywanie wymiarów
-        input_wymiary = st.text_input("Wymiary obrazu (np. 56x87):", key="wymiar_input")
+    # 2. Pola Szerokość x Wysokość obok siebie
+    c_s, c_x, c_w = st.columns([10, 1, 10])
+    with c_s:
+        szer = st.number_input("Szerokość (cm)", value=30.0, step=0.1)
+    with c_x:
+        st.markdown("<h3 style='text-align: center; padding-top: 30px;'>x</h3>", unsafe_allow_html=True)
+    with c_w:
+        wys = st.number_input("Wysokość (cm)", value=40.0, step=0.1)
 
-    if input_wymiary:
-        liczby_wym = re.findall(r'\d+', input_wymiary)
+    # Pobranie danych wybranej listwy
+    l = df[df['kod'] == wybrany_kod].iloc[0]
+    
+    st.divider()
+
+    # Dane z cennika
+    c_l_netto = float(str(l['cena_l_netto']).replace(',', '.'))
+    c_o_netto = float(str(l['cena_o_netto']).replace(',', '.'))
+    sz_listwy = float(str(l['szerokosc']).replace(',', '.'))
+
+    # Obliczenia
+    obwod_m = ((2 * szer) + (2 * wys) + (8 * sz_listwy)) / 100
+    pow_m2 = (szer * wys) / 10000
+
+    st.info(f"""
+    Listwa: **{wybrany_kod}** ({sz_listwy} cm) | POTRZEBA: **{obwod_m:.2f} mb** / **{pow_m2:.3f} mkw**
+    
+    KOSZT PROD. (brutto): Listwa {((c_l_netto * VAT) * obwod_m):.2f} zł / Rama {((c_o_netto * VAT) * obwod_m):.2f} zł
+    """)
+
+    # Obliczenia dla klienta
+    k_listwa = (c_l_netto * (1 + config['marza_listwa'])) * VAT * obwod_m
+    k_oprawa = (c_o_netto * (1 + config['marza_oprawa'])) * VAT * obwod_m
+    k_float = (config['float'] * VAT) * pow_m2
+    k_anty = (config['antyreflex'] * VAT) * pow_m2
+    k_hdf = (config['hdf'] * VAT) * pow_m2
+    k_pp = (config['paspartu'] * VAT) * pow_m2
+
+    st.subheader("Wybierz elementy:")
+    suma = 0.0
+    wybrane_do_akcji = []
+    
+    opcje = [("Sama listwa", k_listwa), ("Listwa z oprawą", k_oprawa), 
+                ("Szyba Float", k_float), ("Szyba Antyreflex", k_anty), 
+                ("Płyta HDF", k_hdf), ("Passe-partout", k_pp)]
+
+    for nazwa, cena in opcje:
+        if st.checkbox(f"{nazwa}: {cena:.2f} zł"):
+            suma += cena
+            wybrane_do_akcji.append(f"{nazwa}: {cena:.2f} zl")
+
+    st.divider()
+    col_u1, col_u2 = st.columns([2, 1])
+    with col_u1:
+        dodaj_usluge = st.checkbox("Dodatkowa usługa")
+    with col_u2:
+        kwota_uslugi = st.number_input("Cena (zł)", value=0.0, step=1.0)
+
+    if dodaj_usluge and kwota_uslugi > 0:
+        suma += kwota_uslugi
+        wybrane_do_akcji.append(f"Usluga dodatkowa: {kwota_uslugi:.2f} zl")
+
+    st.divider()
+    st.markdown(f"### RAZEM DO ZAPŁATY: {suma:.2f} zł")
+
+    if suma > 0:
+        c1, c2 = st.columns(2)
+        t_sms = f"Wycena (Listwa {wybrany_kod}, {int(szer)}x{int(wys)}cm):\n" + "\n".join(wybrane_do_akcji) + f"\nSuma: {suma:.2f} zl\nwww.antyramy.eu"
+        c1.link_button("📱 Wyślij SMS", f"sms:?body={urllib.parse.quote(t_sms)}", use_container_width=True)
         
-        if len(liczby_wym) >= 2:
-            s_init = float(liczby_wym[0])
-            w_init = float(liczby_wym[1])
-            
-            # Pobranie danych wybranej listwy
-            l = df[df['kod'] == wybrany_kod].iloc[0]
-            
-            st.divider()
-            
-            # Korekta precyzyjna wymiarów
-            col_s, col_w = st.columns(2)
-            szer = col_s.number_input("Szerokość (cm)", value=s_init, step=0.1)
-            wys = col_w.number_input("Wysokość (cm)", value=w_init, step=0.1)
-
-            # Dane z cennika
-            c_l_netto = float(str(l['cena_l_netto']).replace(',', '.'))
-            c_o_netto = float(str(l['cena_o_netto']).replace(',', '.'))
-            sz_listwy = float(str(l['szerokosc']).replace(',', '.'))
-
-            # Obliczenia
-            obwod_m = ((2 * szer) + (2 * wys) + (8 * sz_listwy)) / 100
-            pow_m2 = (szer * wys) / 10000
-
-            st.info(f"""
-            Listwa: **{wybrany_kod}** ({sz_listwy} cm) | POTRZEBA: **{obwod_m:.2f} mb** / **{pow_m2:.3f} mkw**
-            
-            KOSZT PROD. (brutto): Listwa {((c_l_netto * VAT) * obwod_m):.2f} zł / Rama {((c_o_netto * VAT) * obwod_m):.2f} zł
-            """)
-
-            # Obliczenia dla klienta
-            k_listwa = (c_l_netto * (1 + config['marza_listwa'])) * VAT * obwod_m
-            k_oprawa = (c_o_netto * (1 + config['marza_oprawa'])) * VAT * obwod_m
-            k_float = (config['float'] * VAT) * pow_m2
-            k_anty = (config['antyreflex'] * VAT) * pow_m2
-            k_hdf = (config['hdf'] * VAT) * pow_m2
-            k_pp = (config['paspartu'] * VAT) * pow_m2
-
-            st.subheader("Wybierz elementy:")
-            suma = 0.0
-            wybrane_do_akcji = []
-            
-            opcje = [("Sama listwa", k_listwa), ("Listwa z oprawą", k_oprawa), 
-                     ("Szyba Float", k_float), ("Szyba Antyreflex", k_anty), 
-                     ("Płyta HDF", k_hdf), ("Passe-partout", k_pp)]
-
-            for nazwa, cena in opcje:
-                if st.checkbox(f"{nazwa}: {cena:.2f} zł"):
-                    suma += cena
-                    wybrane_do_akcji.append(f"{nazwa}: {cena:.2f} zl")
-
-            st.divider()
-            col_u1, col_u2 = st.columns([2, 1])
-            with col_u1:
-                dodaj_usluge = st.checkbox("Dodatkowa usługa")
-            with col_u2:
-                kwota_uslugi = st.number_input("Cena (zł)", value=0.0, step=1.0)
-
-            if dodaj_usluge and kwota_uslugi > 0:
-                suma += kwota_uslugi
-                wybrane_do_akcji.append(f"Usluga dodatkowa: {kwota_uslugi:.2f} zl")
-
-            st.divider()
-            st.markdown(f"### RAZEM DO ZAPŁATY: {suma:.2f} zł")
-
-            if suma > 0:
-                c1, c2 = st.columns(2)
-                t_sms = f"Wycena (Listwa {wybrany_kod}, {int(szer)}x{int(wys)}cm):\n" + "\n".join(wybrane_do_akcji) + f"\nSuma: {suma:.2f} zl\nwww.antyramy.eu"
-                c1.link_button("📱 Wyślij SMS", f"sms:?body={urllib.parse.quote(t_sms)}", use_container_width=True)
-                
-                try:
-                    p_bytes = create_pdf(wybrany_kod, szer, wys, obwod_m, pow_m2, wybrane_do_akcji, suma)
-                    c2.download_button("📄 Pobierz PDF", p_bytes, f"wycena_{wybrany_kod}.pdf", "application/pdf", use_container_width=True)
-                except Exception as e:
-                    c2.error(f"Błąd PDF: {e}")
-                
-                st.text_area("Podgląd tekstu:", t_sms, height=120)
-        else:
-            st.warning("Wpisz poprawnie wymiary, np. '50x70'")
+        try:
+            p_bytes = create_pdf(wybrany_kod, szer, wys, obwod_m, pow_m2, wybrane_do_akcji, suma)
+            c2.download_button("📄 Pobierz PDF", p_bytes, f"wycena_{wybrany_kod}_{int(szer)}x{int(wys)}.pdf", "application/pdf", use_container_width=True)
+        except Exception as e:
+            c2.error(f"Błąd PDF: {e}")
+        
+        st.text_area("Podgląd tekstu:", t_sms, height=120)
 
 with st.expander("🛠️ Diagnostyka"):
     if config:
