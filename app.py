@@ -6,6 +6,7 @@ from fpdf import FPDF
 
 # --- KONFIGURACJA ---
 VAT = 1.23
+HASLO_ADMIN = "123"  # <--- TUTAJ WPISZ SWOJE HASŁO
 
 def clean_pl(text):
     """Usuwa polskie znaki dla potrzeb generatora PDF"""
@@ -78,50 +79,61 @@ st.set_page_config(page_title="Kalkulator Antyramy.eu", layout="centered")
 
 df, config = load_data()
 
-# Nagłówek: Tytuł (Czerwony) + Przyciski
+# LOGOWANIE (Dyskretne na dole, sprawdzane tutaj)
+czy_admin = False
+with st.sidebar:
+    haslo = st.text_input("Panel Właściciela (Hasło):", type="password")
+    if haslo == HASLO_ADMIN:
+        czy_admin = True
+        st.success("Zalogowano jako Właściciel")
+
+# Nagłówek
 col_title, col_calc, col_new = st.columns([2, 1, 1])
 with col_title:
     st.markdown("<h1 style='color: red; margin: 0; padding: 0;'>Wycena</h1>", unsafe_allow_html=True)
+
 with col_calc:
     if st.button("Odśwież 🔄", use_container_width=True):
         st.cache_data.clear()
         st.rerun()
+
 with col_new:
     if st.button("Nowa ✨", use_container_width=True):
         st.rerun()
 
 # --- WPISYWANIE DANYCH ---
 if df is not None:
-    # 1. Wybór kodu listwy
     lista_kodow = sorted(df['kod'].unique().tolist())
     wybrany_kod = st.selectbox("Wybierz kod listwy:", lista_kodow)
     
-    # 2. Pola Szerokość i Wysokość obok siebie bez "x"
     c_s, c_w = st.columns(2)
     with c_s:
         szer = st.number_input("Szerokość (cm)", value=30.0, step=0.1)
     with c_w:
         wys = st.number_input("Wysokość (cm)", value=40.0, step=0.1)
 
-    # Pobranie danych wybranej listwy
     l = df[df['kod'] == wybrany_kod].iloc[0]
-    
     st.divider()
 
-    # Dane z cennika
     c_l_netto = float(str(l['cena_l_netto']).replace(',', '.'))
     c_o_netto = float(str(l['cena_o_netto']).replace(',', '.'))
     sz_listwy = float(str(l['szerokosc']).replace(',', '.'))
 
-    # Obliczenia
     obwod_m = ((2 * szer) + (2 * wys) + (8 * sz_listwy)) / 100
     pow_m2 = (szer * wys) / 10000
 
-    st.info(f"""
-    Listwa: **{wybrany_kod}** ({sz_listwy} cm) | POTRZEBA: **{obwod_m:.2f} mb** / **{pow_m2:.3f} mkw**
-    
-    KOSZT PROD. (brutto): Listwa {((c_l_netto * VAT) * obwod_m):.2f} zł / Rama {((c_o_netto * VAT) * obwod_m):.2f} zł
-    """)
+    # POKAZYWANIE KOSZTÓW TYLKO ADMINOWI
+    if czy_admin:
+        k_prod_l = (c_l_netto * VAT) * obwod_m
+        k_prod_o = (c_o_netto * VAT) * obwod_m
+        st.info(f"""
+        Listwa: **{wybrany_kod}** ({sz_listwy} cm) | POTRZEBA: **{obwod_m:.2f} mb** / **{pow_m2:.3f} mkw**
+        
+        KOSZT PROD. (brutto): Listwa {k_prod_l:.2f} zł / Rama {k_prod_o:.2f} zł
+        """)
+    else:
+        # Widok dla klienta - bez kosztów produkcji
+        st.info(f"Wybrany model: **{wybrany_kod}** (Szerokość profilu: {sz_listwy} cm)")
 
     # Obliczenia dla klienta
     k_listwa = (c_l_netto * (1 + config['marza_listwa'])) * VAT * obwod_m
@@ -144,16 +156,18 @@ if df is not None:
             suma += cena
             wybrane_do_akcji.append(f"{nazwa}: {cena:.2f} zl")
 
-    st.divider()
-    col_u1, col_u2 = st.columns([2, 1])
-    with col_u1:
-        dodaj_usluge = st.checkbox("Dodatkowa usługa")
-    with col_u2:
-        kwota_uslugi = st.number_input("Cena (zł)", value=0.0, step=1.0)
+    # Dodatkowa usługa tylko dla Admina (lub opcjonalnie dla klienta, jeśli chcesz)
+    if czy_admin:
+        st.divider()
+        col_u1, col_u2 = st.columns([2, 1])
+        with col_u1:
+            dodaj_usluge = st.checkbox("Dodatkowa usługa")
+        with col_u2:
+            kwota_uslugi = st.number_input("Cena (zł)", value=0.0, step=1.0)
 
-    if dodaj_usluge and kwota_uslugi > 0:
-        suma += kwota_uslugi
-        wybrane_do_akcji.append(f"Usluga dodatkowa: {kwota_uslugi:.2f} zl")
+        if dodaj_usluge and kwota_uslugi > 0:
+            suma += kwota_uslugi
+            wybrane_do_akcji.append(f"Usluga dodatkowa: {kwota_uslugi:.2f} zl")
 
     st.divider()
     st.markdown(f"### RAZEM DO ZAPŁATY: {suma:.2f} zł")
@@ -161,16 +175,18 @@ if df is not None:
     if suma > 0:
         c1, c2 = st.columns(2)
         t_sms = f"Wycena (Listwa {wybrany_kod}, {int(szer)}x{int(wys)}cm):\n" + "\n".join(wybrane_do_akcji) + f"\nSuma: {suma:.2f} zl\nwww.antyramy.eu"
-        c1.link_button("📱 Wyślij SMS", f"sms:?body={urllib.parse.quote(t_sms)}", use_container_width=True)
+        
+        # Przycisk SMS (Klienci rzadziej używają, ale zostawiamy)
+        c1.link_button("📱 Wyślij zapytanie", f"sms:?body={urllib.parse.quote(t_sms)}", use_container_width=True)
         
         try:
             p_bytes = create_pdf(wybrany_kod, szer, wys, obwod_m, pow_m2, wybrane_do_akcji, suma)
-            c2.download_button("📄 Pobierz PDF", p_bytes, f"wycena_{wybrany_kod}_{int(szer)}x{int(wys)}.pdf", "application/pdf", use_container_width=True)
+            c2.download_button("📄 Pobierz PDF", p_bytes, f"wycena_{wybrany_kod}.pdf", "application/pdf", use_container_width=True)
         except Exception as e:
             c2.error(f"Błąd PDF: {e}")
-        
-        st.text_area("Podgląd tekstu:", t_sms, height=120)
 
-with st.expander("🛠️ Diagnostyka"):
-    if config:
+# DIAGNOSTYKA TYLKO DLA ADMINA
+if czy_admin:
+    with st.expander("🛠️ Diagnostyka i Marże"):
         st.write(f"Marża L: {config['marza_listwa']*100}% | Marża O: {config['marza_oprawa']*100}%")
+        st.write(f"Cena Float Netto: {config['float']} zł")
