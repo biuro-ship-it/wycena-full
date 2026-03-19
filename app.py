@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pandas as pd
 import re
@@ -15,7 +16,6 @@ def clean_pl(text):
 @st.cache_data(show_spinner="Pobieranie cennika...")
 def load_data():
     try:
-        # Wczytujemy cennik z GitHub
         df_raw = pd.read_csv('cennik.csv', sep=';', decimal=',', header=None, dtype=str)
         
         def get_val_footer(keyword, col_idx):
@@ -23,10 +23,8 @@ def load_data():
             rows = df_raw[mask]
             if not rows.empty:
                 val = str(rows.iloc[0, col_idx]).replace(',', '.')
-                try:
-                    return float(val)
-                except:
-                    return 0.0
+                try: return float(val)
+                except: return 0.0
             return 0.0
 
         prices = {
@@ -38,7 +36,6 @@ def load_data():
             'marza_oprawa': get_val_footer('mar', 3) / 100 if get_val_footer('mar', 3) > 0 else 0.3
         }
 
-        # Wyodrębnienie listy listew
         df_frames = df_raw.iloc[2:].copy()
         stopka_mask = df_frames[0].astype(str).str.lower().str.contains('float|hdf|anty|pas|mar', na=False)
         if stopka_mask.any():
@@ -80,20 +77,17 @@ def create_pdf(kod, szer, wys, obwod, mkw, elementy, suma):
 # --- START UI ---
 st.set_page_config(page_title="Kalkulator Antyramy.eu", layout="centered")
 
-# Inicjalizacja stanu dla pola tekstowego
-if "main_input" not in st.session_state:
-    st.session_state["main_input"] = ""
+# Inicjalizacja stanu
+if "wymiar_input" not in st.session_state:
+    st.session_state["wymiar_input"] = ""
 
 df, config = load_data()
 
-# Nagłówek: Logo + Tytuł (Czerwony) + Przyciski
+# Nagłówek: Logo + Tytuł + Przyciski
 col_logo, col_rest = st.columns([1, 4])
-
 with col_logo:
-    try:
-        st.image("KOD A.png", use_container_width=True)
-    except:
-        st.write("🖼️")
+    try: st.image("KOD A.png", use_container_width=True)
+    except: st.write("🖼️")
 
 with col_rest:
     col_title, col_calc, col_new = st.columns([2, 1, 1])
@@ -105,51 +99,52 @@ with col_rest:
             st.rerun()
     with col_new:
         if st.button("Nowa ✨", use_container_width=True):
-            st.session_state["main_input"] = ""
+            st.session_state["wymiar_input"] = ""
             st.rerun()
 
-# Pole do wpisywania kodu i wymiarów
-input_tekst = st.text_input("Podaj kod i wymiar (np. '3484 50x70'):", key="main_input")
-
-if input_tekst and df is not None:
-    # Wyciąganie liczb z tekstu
-    liczby = re.findall(r'\d+', input_tekst)
+# --- WPISYWANIE DANYCH ---
+if df is not None:
+    c_k1, c_k2 = st.columns([1, 1])
     
-    if len(liczby) >= 1:
-        kod_szukany = liczby[0]
-        wybrana = df[df['kod'] == kod_szukany]
+    with c_k1:
+        # Lista rozwijalna z kodami
+        lista_kodow = sorted(df['kod'].unique().tolist())
+        wybrany_kod = st.selectbox("Wybierz kod listwy:", lista_kodow)
+    
+    with c_k2:
+        # Ręczne wpisywanie wymiarów
+        input_wymiary = st.text_input("Wymiary obrazu (np. 56x87):", key="wymiar_input")
+
+    if input_wymiary:
+        liczby_wym = re.findall(r'\d+', input_wymiary)
         
-        if not wybrana.empty:
-            l = wybrana.iloc[0]
+        if len(liczby_wym) >= 2:
+            s_init = float(liczby_wym[0])
+            w_init = float(liczby_wym[1])
             
-            # Wymiary domyślne lub wyciągnięte z tekstu
-            s_init = float(liczby[1]) if len(liczby) >= 3 else 30.0
-            w_init = float(liczby[2]) if len(liczby) >= 3 else 40.0
+            # Pobranie danych wybranej listwy
+            l = df[df['kod'] == wybrany_kod].iloc[0]
+            
+            st.divider()
+            
+            # Korekta precyzyjna wymiarów
+            col_s, col_w = st.columns(2)
+            szer = col_s.number_input("Szerokość (cm)", value=s_init, step=0.1)
+            wys = col_w.number_input("Wysokość (cm)", value=w_init, step=0.1)
 
-            col1, col2 = st.columns(2)
-            szer = col1.number_input("Szerokość (cm)", value=s_init, step=0.1)
-            wys = col2.number_input("Wysokość (cm)", value=w_init, step=0.1)
-
-            # Dane z cennika (zamiana przecinków na kropki)
-            try:
-                c_l_netto = float(str(l['cena_l_netto']).replace(',', '.'))
-                c_o_netto = float(str(l['cena_o_netto']).replace(',', '.'))
-                sz_listwy = float(str(l['szerokosc']).replace(',', '.'))
-            except Exception as e:
-                st.error("Błąd w danych cennika dla tej listwy.")
-                st.stop()
+            # Dane z cennika
+            c_l_netto = float(str(l['cena_l_netto']).replace(',', '.'))
+            c_o_netto = float(str(l['cena_o_netto']).replace(',', '.'))
+            sz_listwy = float(str(l['szerokosc']).replace(',', '.'))
 
             # Obliczenia
             obwod_m = ((2 * szer) + (2 * wys) + (8 * sz_listwy)) / 100
             pow_m2 = (szer * wys) / 10000
 
-            k_prod_l = (c_l_netto * VAT) * obwod_m
-            k_prod_o = (c_o_netto * VAT) * obwod_m
-
             st.info(f"""
-            Listwa: {l['kod']} ({sz_listwy} cm) | POTRZEBA: {obwod_m:.2f} mb / {pow_m2:.3f} mkw
+            Listwa: **{wybrany_kod}** ({sz_listwy} cm) | POTRZEBA: **{obwod_m:.2f} mb** / **{pow_m2:.3f} mkw**
             
-            KOSZT PROD. (brutto): Listwa {k_prod_l:.2f} zł / Rama {k_prod_o:.2f} zł
+            KOSZT PROD. (brutto): Listwa {((c_l_netto * VAT) * obwod_m):.2f} zł / Rama {((c_o_netto * VAT) * obwod_m):.2f} zł
             """)
 
             # Obliczenia dla klienta
@@ -189,20 +184,19 @@ if input_tekst and df is not None:
 
             if suma > 0:
                 c1, c2 = st.columns(2)
-                t_sms = f"Wycena (Listwa {l['kod']}, {int(szer)}x{int(wys)}cm):\n" + "\n".join(wybrane_do_akcji) + f"\nSuma: {suma:.2f} zl\nwww.antyramy.eu"
+                t_sms = f"Wycena (Listwa {wybrany_kod}, {int(szer)}x{int(wys)}cm):\n" + "\n".join(wybrane_do_akcji) + f"\nSuma: {suma:.2f} zl\nwww.antyramy.eu"
                 c1.link_button("📱 Wyślij SMS", f"sms:?body={urllib.parse.quote(t_sms)}", use_container_width=True)
                 
                 try:
-                    p_bytes = create_pdf(l['kod'], szer, wys, obwod_m, pow_m2, wybrane_do_akcji, suma)
-                    c2.download_button("📄 Pobierz PDF", p_bytes, f"wycena_{l['kod']}.pdf", "application/pdf", use_container_width=True)
+                    p_bytes = create_pdf(wybrany_kod, szer, wys, obwod_m, pow_m2, wybrane_do_akcji, suma)
+                    c2.download_button("📄 Pobierz PDF", p_bytes, f"wycena_{wybrany_kod}.pdf", "application/pdf", use_container_width=True)
                 except Exception as e:
                     c2.error(f"Błąd PDF: {e}")
                 
                 st.text_area("Podgląd tekstu:", t_sms, height=120)
         else:
-            st.error(f"Nie znaleziono kodu: {kod_szukany}")
+            st.warning("Wpisz poprawnie wymiary, np. '50x70'")
 
 with st.expander("🛠️ Diagnostyka"):
     if config:
         st.write(f"Marża L: {config['marza_listwa']*100}% | Marża O: {config['marza_oprawa']*100}%")
-        st.write(f"Cena Float: {config['float']} zł")
