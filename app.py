@@ -88,7 +88,7 @@ with col_calc:
         st.rerun()
 with col_new:
     if st.button("Nowa ✨", use_container_width=True):
-        st.rerun() # Przycisk przeładowuje stronę do ustawień domyślnych
+        st.rerun()
 
 # --- WPISYWANIE DANYCH ---
 if df is not None:
@@ -96,12 +96,10 @@ if df is not None:
     lista_kodow = sorted(df['kod'].unique().tolist())
     wybrany_kod = st.selectbox("Wybierz kod listwy:", lista_kodow)
     
-    # 2. Pola Szerokość x Wysokość obok siebie
-    c_s, c_x, c_w = st.columns([10, 1, 10])
+    # 2. Pola Szerokość i Wysokość obok siebie bez "x"
+    c_s, c_w = st.columns(2)
     with c_s:
         szer = st.number_input("Szerokość (cm)", value=30.0, step=0.1)
-    with c_x:
-        st.markdown("<h3 style='text-align: center; padding-top: 30px;'>x</h3>", unsafe_allow_html=True)
     with c_w:
         wys = st.number_input("Wysokość (cm)", value=40.0, step=0.1)
 
